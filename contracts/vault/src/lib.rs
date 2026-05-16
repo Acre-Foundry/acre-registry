@@ -1,6 +1,4 @@
-//! Acre Vault Contract
-//! Wraps a real-world asset into fractional ACRE tokens.
-//! Stores asset metadata and links to the token + distribution contracts.
+//! Acre Vault Contract — registers an RWA and links to token + distribution contracts.
 
 #![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Symbol};
@@ -8,12 +6,12 @@ use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Sy
 #[contracttype]
 #[derive(Clone)]
 pub struct VaultInfo {
-    pub asset_id: String,       // e.g. "WAREHOUSE-NYC-001"
+    pub asset_id: String,
     pub asset_value: i128,      // USD cents
-    pub total_tokens: i128,     // 1 token = $1 of asset value
+    pub total_tokens: i128,
     pub token_contract: Address,
     pub distribution_contract: Address,
-    pub spv_address: String,    // Legal SPV identifier
+    pub spv_address: String,
     pub admin: Address,
 }
 
@@ -28,7 +26,6 @@ pub struct VaultContract;
 
 #[contractimpl]
 impl VaultContract {
-    /// Initialize the vault for a real-world asset.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -39,31 +36,29 @@ impl VaultContract {
         distribution_contract: Address,
         spv_address: String,
     ) {
+        // Auth before any state reads to avoid leaking initialization status
+        admin.require_auth();
         if env.storage().instance().has(&DataKey::Initialized) {
             panic!("already initialized");
         }
-        admin.require_auth();
 
-        let vault = VaultInfo {
-            asset_id,
+        env.storage().instance().set(&DataKey::Vault, &VaultInfo {
+            asset_id: asset_id.clone(),
             asset_value,
             total_tokens,
             token_contract,
             distribution_contract,
             spv_address,
             admin,
-        };
-
-        env.storage().instance().set(&DataKey::Vault, &vault);
+        });
         env.storage().instance().set(&DataKey::Initialized, &true);
-        env.events().publish((Symbol::new(&env, "vault_created"),), vault.asset_id.clone());
+        env.events().publish((Symbol::new(&env, "vault_created"),), asset_id);
     }
 
     pub fn get_vault(env: Env) -> VaultInfo {
         env.storage().instance().get(&DataKey::Vault).unwrap()
     }
 
-    /// Update asset valuation (admin only).
     pub fn update_valuation(env: Env, new_value: i128) {
         let mut vault: VaultInfo = env.storage().instance().get(&DataKey::Vault).unwrap();
         vault.admin.require_auth();

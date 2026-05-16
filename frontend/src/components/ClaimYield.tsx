@@ -1,26 +1,27 @@
 "use client";
 import { useState } from "react";
 
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
 export function ClaimYield({ contractId }: { contractId: string }) {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [message, setMessage] = useState("");
 
   async function handleClaim() {
     setStatus("loading");
+    setMessage("");
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/distributions/${contractId}/claim`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ holder: "G_PLACEHOLDER", holderBalance: 0, signedXdr: "" }),
-        }
-      );
+      const res = await fetch(`${API}/api/distributions/${contractId}/claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ holder: "G_PLACEHOLDER", holderBalance: 0, signedXdr: "" }),
+      });
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
       const data = await res.json();
       setMessage(`Submitted: ${data.txHash}`);
       setStatus("done");
-    } catch {
-      setMessage("Claim failed.");
+    } catch (err: any) {
+      setMessage(err.message || "Claim failed.");
       setStatus("error");
     }
   }
@@ -38,12 +39,16 @@ export function ClaimYield({ contractId }: { contractId: string }) {
           borderRadius: 6,
           padding: "0.6rem 1.4rem",
           fontWeight: 600,
-          cursor: "pointer",
+          cursor: status === "loading" ? "not-allowed" : "pointer",
         }}
       >
         {status === "loading" ? "Claiming…" : "Claim Yield"}
       </button>
-      {message && <p style={{ marginTop: "0.75rem", color: status === "error" ? "#e55" : "#6e6" }}>{message}</p>}
+      {message && (
+        <p style={{ marginTop: "0.75rem", color: status === "error" ? "#e55" : "#6e6" }}>
+          {message}
+        </p>
+      )}
     </div>
   );
 }

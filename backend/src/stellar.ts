@@ -1,4 +1,4 @@
-import { SorobanRpc, Contract, Networks, TransactionBuilder, BASE_FEE, Keypair } from "@stellar/stellar-sdk";
+import { SorobanRpc, Contract, Networks } from "@stellar/stellar-sdk";
 
 const RPC_URL = process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
 export const server = new SorobanRpc.Server(RPC_URL);

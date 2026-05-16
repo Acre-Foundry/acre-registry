@@ -1,8 +1,7 @@
-//! Acre Token Contract
-//! SEP-41 compatible fungible token representing fractional ownership of a vault asset.
+//! Acre Token Contract — SEP-41 fungible token for fractional vault ownership.
 
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, String};
+use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String};
 
 #[contracttype]
 pub enum DataKey {
@@ -12,7 +11,6 @@ pub enum DataKey {
     Admin,
     Name,
     Symbol,
-    Decimals,
 }
 
 #[contract]
@@ -28,7 +26,6 @@ impl AcreToken {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Name, &name);
         env.storage().instance().set(&DataKey::Symbol, &symbol);
-        env.storage().instance().set(&DataKey::Decimals, &7_u32);
         env.storage().instance().set(&DataKey::TotalSupply, &supply);
         env.storage().instance().set(&DataKey::Balance(admin.clone()), &supply);
     }
@@ -56,11 +53,11 @@ impl AcreToken {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
         from.require_auth();
         assert!(amount > 0, "amount must be positive");
-        let from_balance = Self::balance(env.clone(), from.clone());
-        assert!(from_balance >= amount, "insufficient balance");
-        env.storage().instance().set(&DataKey::Balance(from), &(from_balance - amount));
-        let to_balance = Self::balance(env.clone(), to.clone());
-        env.storage().instance().set(&DataKey::Balance(to), &(to_balance + amount));
+        let from_bal = Self::balance(env.clone(), from.clone());
+        assert!(from_bal >= amount, "insufficient balance");
+        env.storage().instance().set(&DataKey::Balance(from), &(from_bal - amount));
+        let to_bal = Self::balance(env.clone(), to.clone());
+        env.storage().instance().set(&DataKey::Balance(to), &(to_bal + amount));
     }
 
     pub fn approve(env: Env, owner: Address, spender: Address, amount: i128) {
@@ -72,11 +69,18 @@ impl AcreToken {
         env.storage().instance().get(&DataKey::Allowance(owner, spender)).unwrap_or(0)
     }
 
+    /// Spender transfers on behalf of `from`. Only spender auth required — does NOT
+    /// call `transfer()` internally to avoid demanding `from`'s auth a second time.
     pub fn transfer_from(env: Env, spender: Address, from: Address, to: Address, amount: i128) {
         spender.require_auth();
         let allowance = Self::allowance(env.clone(), from.clone(), spender.clone());
         assert!(allowance >= amount, "insufficient allowance");
+        assert!(amount > 0, "amount must be positive");
+        let from_bal = Self::balance(env.clone(), from.clone());
+        assert!(from_bal >= amount, "insufficient balance");
         env.storage().instance().set(&DataKey::Allowance(from.clone(), spender), &(allowance - amount));
-        Self::transfer(env, from, to, amount);
+        env.storage().instance().set(&DataKey::Balance(from), &(from_bal - amount));
+        let to_bal = Self::balance(env.clone(), to.clone());
+        env.storage().instance().set(&DataKey::Balance(to), &(to_bal + amount));
     }
 }

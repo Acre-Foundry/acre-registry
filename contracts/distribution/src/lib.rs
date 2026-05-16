@@ -1,80 +1,75 @@
 //! Acre Distribution Contract
-//! Accepts stablecoin rent deposits and distributes yield pro-rata to token holders.
-//! Flow: admin deposits rent → snapshot total supply → holders claim their share.
+//! Uses a rent-per-token accumulator so yield is correctly attributed to
+//! the tokens held at the time of each deposit, not retroactively.
 
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env};
+use soroban_sdk::{contract, contractimpl, contracttype, token, Address, Env, Symbol};
 
 #[contracttype]
 pub enum DataKey {
     Admin,
-    TokenContract,
     StablecoinContract,
-    TotalDeposited,
-    Claimed(Address),
-    SnapshotSupply,
+    /// Cumulative rent deposited per token (scaled by PRECISION)
+    RentPerToken,
+    /// Per-holder snapshot of RentPerToken at last claim
+    Checkpoint(Address),
 }
+
+const PRECISION: i128 = 1_000_000_000_000;
 
 #[contract]
 pub struct DistributionContract;
 
 #[contractimpl]
 impl DistributionContract {
-    pub fn initialize(
-        env: Env,
-        admin: Address,
-        token_contract: Address,
-        stablecoin_contract: Address,
-    ) {
+    pub fn initialize(env: Env, admin: Address, stablecoin_contract: Address) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("already initialized");
         }
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::TokenContract, &token_contract);
         env.storage().instance().set(&DataKey::StablecoinContract, &stablecoin_contract);
-        env.storage().instance().set(&DataKey::TotalDeposited, &0_i128);
+        env.storage().instance().set(&DataKey::RentPerToken, &0_i128);
     }
 
-    /// Admin deposits rent (stablecoin). Snapshots total token supply for pro-rata calc.
+    /// Admin deposits rent. `total_token_supply` must be the live supply at deposit time.
     pub fn deposit_rent(env: Env, amount: i128, total_token_supply: i128) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
-        assert!(amount > 0 && total_token_supply > 0);
+        if amount <= 0 || total_token_supply <= 0 {
+            panic!("invalid amount or supply");
+        }
 
         let stablecoin: Address = env.storage().instance().get(&DataKey::StablecoinContract).unwrap();
         token::Client::new(&env, &stablecoin).transfer(&admin, &env.current_contract_address(), &amount);
 
-        let prev: i128 = env.storage().instance().get(&DataKey::TotalDeposited).unwrap_or(0);
-        env.storage().instance().set(&DataKey::TotalDeposited, &(prev + amount));
-        env.storage().instance().set(&DataKey::SnapshotSupply, &total_token_supply);
+        let prev_rpt: i128 = env.storage().instance().get(&DataKey::RentPerToken).unwrap_or(0);
+        let delta = (amount * PRECISION) / total_token_supply;
+        env.storage().instance().set(&DataKey::RentPerToken, &(prev_rpt + delta));
 
-        env.events().publish((soroban_sdk::Symbol::new(&env, "rent_deposited"),), amount);
+        env.events().publish((Symbol::new(&env, "rent_deposited"),), amount);
     }
 
-    /// Token holder claims their pro-rata share of deposited rent.
+    /// Holder claims yield accrued since their last checkpoint.
     pub fn claim(env: Env, holder: Address, holder_balance: i128) {
         holder.require_auth();
-        let total_deposited: i128 = env.storage().instance().get(&DataKey::TotalDeposited).unwrap_or(0);
-        let snapshot_supply: i128 = env.storage().instance().get(&DataKey::SnapshotSupply).unwrap_or(1);
-        let already_claimed: i128 = env.storage().instance().get(&DataKey::Claimed(holder.clone())).unwrap_or(0);
-
-        let entitled = (holder_balance * total_deposited) / snapshot_supply;
-        let claimable = entitled - already_claimed;
-        assert!(claimable > 0, "nothing to claim");
+        let claimable = Self::claimable(env.clone(), holder.clone(), holder_balance);
+        if claimable <= 0 {
+            panic!("nothing to claim");
+        }
 
         let stablecoin: Address = env.storage().instance().get(&DataKey::StablecoinContract).unwrap();
         token::Client::new(&env, &stablecoin).transfer(&env.current_contract_address(), &holder, &claimable);
 
-        env.storage().instance().set(&DataKey::Claimed(holder.clone()), &entitled);
-        env.events().publish((soroban_sdk::Symbol::new(&env, "yield_claimed"),), claimable);
+        let rpt: i128 = env.storage().instance().get(&DataKey::RentPerToken).unwrap_or(0);
+        env.storage().instance().set(&DataKey::Checkpoint(holder.clone()), &rpt);
+
+        env.events().publish((Symbol::new(&env, "yield_claimed"),), claimable);
     }
 
     pub fn claimable(env: Env, holder: Address, holder_balance: i128) -> i128 {
-        let total_deposited: i128 = env.storage().instance().get(&DataKey::TotalDeposited).unwrap_or(0);
-        let snapshot_supply: i128 = env.storage().instance().get(&DataKey::SnapshotSupply).unwrap_or(1);
-        let already_claimed: i128 = env.storage().instance().get(&DataKey::Claimed(holder)).unwrap_or(0);
-        let entitled = (holder_balance * total_deposited) / snapshot_supply;
-        (entitled - already_claimed).max(0)
+        let rpt: i128 = env.storage().instance().get(&DataKey::RentPerToken).unwrap_or(0);
+        let checkpoint: i128 = env.storage().instance().get(&DataKey::Checkpoint(holder)).unwrap_or(0);
+        (holder_balance * (rpt - checkpoint)) / PRECISION
     }
 }
