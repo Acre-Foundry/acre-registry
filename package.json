@@ -1,0 +1,17 @@
+{
+  "name": "acre-registry",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["frontend", "backend", "shared"],
+  "scripts": {
+    "dev:frontend": "yarn workspace frontend dev",
+    "dev:backend": "yarn workspace backend dev",
+    "dev": "concurrently \"yarn dev:backend\" \"yarn dev:frontend\"",
+    "build": "yarn workspace shared build && yarn workspace backend build && yarn workspace frontend build",
+    "contracts:build": "cd contracts && cargo build --target wasm32-unknown-unknown --release",
+    "contracts:test": "cd contracts && cargo test"
+  },
+  "devDependencies": {
+    "concurrently": "8.2.2"
+  }
+}

@@ -1,0 +1,16 @@
+# Rust
+contracts/target/
+
+# Node
+node_modules/
+frontend/.next/
+frontend/out/
+backend/dist/
+
+# Env
+.env
+.env.local
+*.env
+
+# Misc
+.DS_Store
