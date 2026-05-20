@@ -84,3 +84,7 @@ Repeat for `acre_token` and `acre_distribution`, then populate `backend/.env`.
 ## Legal Bridge
 
 Each vault maps to a real-world **SPV (Special Purpose Vehicle)**. The `spv_address` field in the vault contract acts as the on-chain pointer to the legal entity, making the smart contract the authoritative shareholder registry.
+
+## Security
+
+Please report vulnerabilities privately. See [SECURITY.md](SECURITY.md) for the Acre Registry responsible disclosure policy, supported versions, expected response times, and Soroban/RWA-specific reporting guidance.
